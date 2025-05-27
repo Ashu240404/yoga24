@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lovely Colorful Chat</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        @keyframes gradientFlow {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #e1e1e1;
+            margin: 0; padding: 20px;
+            display: flex; justify-content: center;
+            height: 100vh;
+            align-items: center;
+        }
+        #chat {
+            width: 600px;
+            background: linear-gradient(270deg, #ff94c2, #7084ff, #a368ff, #f18ef0);
+            background-size: 800% 800%;
+            animation: gradientFlow 20s ease infinite;
+            border-radius: 20px;
+            padding: 25px 30px;
+            box-shadow: 0 0 20px rgba(161, 72, 194, 0.6);
+            display: flex;
+            flex-direction: column;
+        }
+        #username {
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            outline: none;
+            width: 100%;
+            box-sizing: border-box;
+            font-weight: 600;
+        }
+        #messages {
+            flex-grow: 1;
+            height: 350px;
+            overflow-y: auto;
+            background: rgba(255 255 255 / 0.9);
+            border-radius: 16px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .message-container {
+            display: flex;
+            align-items: center;
+            max-width: 70%;
+            gap: 8px;
+        }
+        .message {
+            padding: 14px 20px;
+            border-radius: 24px;
+            box-shadow: 1px 1px 6px rgba(0,0,0,0.1);
+            word-wrap: break-word;
+            flex-grow: 1;
+            font-weight: 500;
+            font-size: 15px;
+            line-height: 1.3;
+            color: #222;
+        }
+        .sent {
+            background-color: #ffb3d9;  /* pastel pink */
+            align-self: flex-end;
+            border-radius: 24px 24px 0 24px;
+            box-shadow: 1px 1px 8px #d67bbf;
+        }
+        .received {
+            background-color: #c7d2ff;  /* pastel blue */
+            align-self: flex-start;
+            border-radius: 24px 24px 24px 0;
+            box-shadow: 1px 1px 8px #7084ff;
+        }
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #a368ff;
+        }
+        #message {
+            padding: 14px;
+            font-size: 16px;
+            border-radius: 12px;
+            border: none;
+            outline: none;
+            width: 100%;
+            box-sizing: border-box;
+            font-weight: 500;
+            box-shadow: 0 0 12px rgba(161, 72, 194, 0.5);
+        }
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        button {
+            padding: 12px 18px;
+            font-size: 14px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            background-color: #a368ff;
+            color: white;
+            font-weight: 600;
+            transition: background-color 0.3s ease;
+            box-shadow: 0 0 12px rgba(161, 72, 194, 0.7);
+        }
+        button:hover {
+            background-color: #7b36d1;
+        }
+        button:disabled {
+            background-color: #d3c9ff;
+            cursor: default;
+        }
+        #deleteSelectedBtn, #cancelDeleteBtn, #deleteAllBtn {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat">
+        <input id="username" placeholder="Enter your username" />
+        <div id="messages"></div>
+        <input id="message" placeholder="Type a message and press Enter" />
+        <div id="controls">
+            <button id="toggleDeleteBtn">Delete Messages</button>
+            <button id="deleteSelectedBtn">Delete Selected</button>
+            <button id="cancelDeleteBtn">Cancel</button>
+            <button id="deleteAllBtn">Delete All</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+
+        const usernameInput = document.getElementById('username');
+        const messageInput = document.getElementById('message');
+        const messages = document.getElementById('messages');
+
+        const toggleDeleteBtn = document.getElementById('toggleDeleteBtn');
+        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+        const deleteAllBtn = document.getElementById('deleteAllBtn');
+
+        let localUsername = "";
+        let deleteMode = false;
+
+        usernameInput.addEventListener('change', () => {
+            localUsername = usernameInput.value.trim();
+        });
+
+        messageInput.addEventListener('keypress', e => {
+            if (e.key === 'Enter') {
+                const msg = messageInput.value.trim();
+                const username = usernameInput.value.trim() || "Anonymous";
+                if (!localUsername) localUsername = username;
+                if (msg && !deleteMode) {
+                    socket.emit('message', { username, msg });
+                    messageInput.value = '';
+                }
+            }
+        });
+
+        // Store messages for manipulation
+        const chatMessages = [];
+
+        function renderMessage(data, index) {
+            const container = document.createElement('div');
+            container.classList.add('message-container');
+            container.dataset.index = index;
+
+            if (deleteMode) {
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'delete-checkbox';
+                container.appendChild(checkbox);
+            }
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message');
+            bubble.classList.add(data.username === localUsername ? 'sent' : 'received');
+            bubble.textContent = `${data.username}: ${data.msg}`;
+
+            container.appendChild(bubble);
+            return container;
+        }
+
+        function refreshMessages() {
+            messages.innerHTML = '';
+            chatMessages.forEach((msg, idx) => {
+                const msgEl = renderMessage(msg, idx);
+                messages.appendChild(msgEl);
+            });
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        socket.on('message', data => {
+            chatMessages.push(data);
+            if (!deleteMode) {
+                const msgEl = renderMessage(data, chatMessages.length - 1);
+                messages.appendChild(msgEl);
+                messages.scrollTop = messages.scrollHeight;
+            } else {
+                refreshMessages();
+            }
+        });
+
+        toggleDeleteBtn.onclick = () => {
+            deleteMode = true;
+            toggleDeleteBtn.style.display = 'none';
+            deleteSelectedBtn.style.display = 'inline-block';
+            cancelDeleteBtn.style.display = 'inline-block';
+            deleteAllBtn.style.display = 'inline-block';
+            refreshMessages();
+        };
+
+        cancelDeleteBtn.onclick = () => {
+            deleteMode = false;
+            toggleDeleteBtn.style.display = 'inline-block';
+            deleteSelectedBtn.style.display = 'none';
+            cancelDeleteBtn.style.display = 'none';
+            deleteAllBtn.style.display = 'none';
+            refreshMessages();
+        };
+
+        deleteSelectedBtn.onclick = () => {
+            const checkboxes = document.querySelectorAll('.delete-checkbox');
+            const toDeleteIndexes = [];
+            checkboxes.forEach((cb, idx) => {
+                if (cb.checked) toDeleteIndexes.push(idx);
+            });
+            if (toDeleteIndexes.length === 0) {
+                alert("Select at least one message to delete.");
+                return;
+            }
+            // Delete selected messages from chatMessages
+            // Delete from highest index to lowest to avoid reindex problems
+            toDeleteIndexes.sort((a,b) => b - a).forEach(i => chatMessages.splice(i, 1));
+            deleteMode = false;
+            toggleDeleteBtn.style.display = 'inline-block';
+            deleteSelectedBtn.style.display = 'none';
+            cancelDeleteBtn.style.display = 'none';
+            deleteAllBtn.style.display = 'none';
+            refreshMessages();
+        };
+
+        deleteAllBtn.onclick = () => {
+            if (confirm("Are you sure you want to delete ALL messages?")) {
+                chatMessages.length = 0;
+                deleteMode = false;
+                toggleDeleteBtn.style.display = 'inline-block';
+                deleteSelectedBtn.style.display = 'none';
+                cancelDeleteBtn.style.display = 'none';
+                deleteAllBtn.style.display = 'none';
+                refreshMessages();
+            }
+        };
+    </script>
+</body>
+</html>
